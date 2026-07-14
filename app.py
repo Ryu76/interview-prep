@@ -37,7 +37,7 @@ def research():
         if not uploaded_text:
             return jsonify({"error": "업로드 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다. 더 선명한 이미지 또는 텍스트가 포함된 PDF를 사용해 주세요."}), 422
     try:
-        return jsonify(build_report(company, role, url, uploaded_text))
+        return jsonify(build_report(company, role, url, uploaded_text, generate_brief=True))
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     except Exception:
