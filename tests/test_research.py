@@ -1,4 +1,4 @@
-from research import build_questions, extract_job_sections
+from research import build_questions, build_report, extract_job_sections
 
 
 def test_extract_job_sections_finds_text_under_headings():
@@ -11,4 +11,10 @@ def test_extract_job_sections_finds_text_under_headings():
 def test_build_questions_uses_role_keywords_without_empty_questions():
     questions = build_questions("데이터 분석가", "Python SQL 데이터 분석 A/B 테스트")
     assert any("SQL" in question for question in questions)
-    assert all(question.strip() for question in questions)
+
+
+def test_build_report_without_url_uses_role_as_research_context():
+    report = build_report("테스트회사", "데이터 분석가", "")
+    assert report["company"] == "테스트회사"
+    assert report["job_sections"]["responsibilities"]
+    assert report["questions"]

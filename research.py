@@ -77,9 +77,22 @@ def search_public_sources(query: str, limit: int = 3) -> list[dict[str, str]]:
         return []
 
 
-def build_report(company: str, role: str, job_url: str) -> dict:
-    job_text, job_title = fetch_job_posting(job_url)
+def extract_image_text(image_path: str) -> str:
+    """Extract Korean/English text from a locally uploaded job-posting image."""
+    from rapidocr_onnxruntime import RapidOCR
+    result, _ = RapidOCR()(image_path)
+    return "\n".join(str(row[1]) for row in result or [])
+
+
+def build_report(company: str, role: str, job_url: str = "", uploaded_text: str = "") -> dict:
+    if job_url:
+        job_text, job_title = fetch_job_posting(job_url)
+    else:
+        job_title = None
+        job_text = uploaded_text.strip() or f"담당 업무\n{role} 직무의 핵심 문제를 해결하고, 필요 역량과 협업 경험을 조사합니다."
     sections = extract_job_sections(job_text)
+    if not sections["responsibilities"]:
+        sections["responsibilities"] = clean_text(job_text)
     searches = {
         "history": search_public_sources(f"{company} 회사 연혁"),
         "values": search_public_sources(f"{company} 인재상 핵심가치"),
