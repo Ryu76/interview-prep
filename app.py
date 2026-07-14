@@ -1,6 +1,9 @@
+from io import BytesIO
 from pathlib import Path
+import re
 from tempfile import NamedTemporaryFile
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
+from pdf_export import create_briefing_pdf
 from research import build_report, extract_image_text, extract_pdf_text
 
 app = Flask(__name__)
@@ -14,6 +17,23 @@ def uploaded_file_too_large(_error):
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.post("/api/export-pdf")
+def export_pdf():
+    report = request.get_json(silent=True) or {}
+    company = str(report.get("company") or "").strip()
+    role = str(report.get("role") or "").strip()
+    if not company or not role or not isinstance(report.get("interview_brief"), dict):
+        return jsonify({"error": "회사명, 지원 직무, 생성된 브리핑 내용이 필요합니다."}), 400
+    pdf = create_briefing_pdf(report)
+    filename = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", f"{company}_{role}_면접브리핑.pdf")
+    return send_file(
+        BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 @app.post("/api/research")
 def research():
