@@ -1,9 +1,14 @@
 """Public-source collection and transparent rule-based interview research."""
 from __future__ import annotations
 import re
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
+
+MAX_PDF_PAGES = 12
+MAX_EXTRACTED_TEXT = 24000
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (InterviewPrepBot/1.0; public research)"}
 
@@ -84,9 +89,44 @@ def extract_image_text(image_path: str) -> str:
     return "\n".join(str(row[1]) for row in result or [])
 
 
+def extract_pdf_text(pdf_path: str) -> str:
+    """Extract a job posting from a PDF; OCR image-only pages as a fallback."""
+    import fitz
+
+    try:
+        document = fitz.open(pdf_path)
+    except Exception as error:
+        raise ValueError("열 수 없는 PDF 파일입니다. 손상되지 않은 PDF인지 확인해 주세요.") from error
+    try:
+        if document.needs_pass:
+            raise ValueError("암호로 보호된 PDF는 업로드할 수 없습니다.")
+        if not document.page_count:
+            raise ValueError("페이지가 없는 PDF 파일입니다.")
+
+        pages = [document.load_page(index) for index in range(min(document.page_count, MAX_PDF_PAGES))]
+        text = "\n".join(page.get_text("text") for page in pages).strip()
+        if len(clean_text(text)) >= 80:
+            return text[:MAX_EXTRACTED_TEXT]
+
+        ocr_text = []
+        for page in pages:
+            with NamedTemporaryFile(suffix=".png", delete=False) as temporary:
+                image_path = temporary.name
+            try:
+                page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False).save(image_path)
+                ocr_text.append(extract_image_text(image_path))
+            finally:
+                Path(image_path).unlink(missing_ok=True)
+        return "\n".join(ocr_text).strip()[:MAX_EXTRACTED_TEXT]
+    finally:
+        document.close()
+
+
 def build_report(company: str, role: str, job_url: str = "", uploaded_text: str = "") -> dict:
     if job_url:
         job_text, job_title = fetch_job_posting(job_url)
+        if uploaded_text.strip():
+            job_text = f"{job_text}\n\n[업로드한 공고 파일]\n{uploaded_text.strip()}"
     else:
         job_title = None
         job_text = uploaded_text.strip() or f"담당 업무\n{role} 직무의 핵심 문제를 해결하고, 필요 역량과 협업 경험을 조사합니다."

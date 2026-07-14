@@ -1,9 +1,15 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from flask import Flask, jsonify, render_template, request
-from research import build_report, extract_image_text
+from research import build_report, extract_image_text, extract_pdf_text
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
+
+
+@app.errorhandler(413)
+def uploaded_file_too_large(_error):
+    return jsonify({"error": "업로드 파일은 12MB 이하여야 합니다."}), 413
 
 @app.get("/")
 def index():
@@ -16,20 +22,20 @@ def research():
     if not company or not role:
         return jsonify({"error": "회사명과 지원 직무는 필수입니다."}), 400
     uploaded_text = ""
-    image = request.files.get("jobImage")
-    if image and image.filename:
-        suffix = Path(image.filename).suffix.lower()
-        if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
-            return jsonify({"error": "PNG, JPG, JPEG, WEBP 이미지 파일만 업로드할 수 있습니다."}), 400
+    upload = request.files.get("jobFile") or request.files.get("jobImage")
+    if upload and upload.filename:
+        suffix = Path(upload.filename).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".pdf"}:
+            return jsonify({"error": "PNG, JPG, JPEG, WEBP 이미지 또는 PDF 파일만 업로드할 수 있습니다."}), 400
         with NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
-            image.save(temporary.name)
+            upload.save(temporary.name)
             path = temporary.name
         try:
-            uploaded_text = extract_image_text(path)
+            uploaded_text = extract_pdf_text(path) if suffix == ".pdf" else extract_image_text(path)
         finally:
             Path(path).unlink(missing_ok=True)
         if not uploaded_text:
-            return jsonify({"error": "이미지에서 읽을 수 있는 텍스트를 찾지 못했습니다. 더 선명한 이미지를 사용해 주세요."}), 422
+            return jsonify({"error": "업로드 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다. 더 선명한 이미지 또는 텍스트가 포함된 PDF를 사용해 주세요."}), 422
     try:
         return jsonify(build_report(company, role, url, uploaded_text))
     except ValueError as error:
