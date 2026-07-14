@@ -1,6 +1,7 @@
 """Public-source collection and transparent rule-based interview research."""
 from __future__ import annotations
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
@@ -66,7 +67,88 @@ def fetch_job_posting(url: str) -> tuple[str, str | None]:
     return soup.get_text("\n", strip=True)[:24000], title
 
 
-def search_public_sources(query: str, limit: int = 3) -> list[dict[str, str]]:
+def _parse_bing_results(html: str, limit: int = 4) -> list[dict[str, str]]:
+    soup = BeautifulSoup(html, "html.parser")
+    items = []
+    seen_urls = set()
+    for result in soup.select("li.b_algo"):
+        anchor = result.select_one("h2 a")
+        if not anchor:
+            continue
+        url = anchor.get("href", "").strip()
+        if not url.startswith(("http://", "https://")) or url in seen_urls:
+            continue
+        snippet = result.select_one(".b_caption p") or result.select_one("p")
+        items.append({
+            "title": clean_text(anchor.get_text(" ", strip=True)),
+            "url": url,
+            "snippet": clean_text(snippet.get_text(" ", strip=True)) if snippet else "",
+        })
+        seen_urls.add(url)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _parse_naver_results(html: str, limit: int = 4) -> list[dict[str, str]]:
+    soup = BeautifulSoup(html, "html.parser")
+    grouped = {}
+    for anchor in soup.select("a[href]"):
+        url = anchor.get("href", "").strip()
+        hostname = urlparse(url).hostname or ""
+        if not url.startswith(("http://", "https://")) or hostname.endswith("naver.com"):
+            continue
+        text = clean_text(anchor.get_text(" ", strip=True)).replace("새 창 열림", "").strip()
+        if text:
+            grouped.setdefault(url, []).append(text)
+
+    items = []
+    for url, texts in grouped.items():
+        unique_texts = list(dict.fromkeys(texts))
+        useful = [
+            text for text in unique_texts
+            if "www." not in text and not re.search(r"\b[\w-]+\.(?:com|co\.kr|net|org)\b", text) and len(text) >= 8
+        ]
+        if not useful:
+            continue
+        title = useful[0]
+        snippet = useful[1] if len(useful) > 1 else ""
+        items.append({"title": title[:180], "url": url, "snippet": snippet[:360]})
+        if len(items) >= limit:
+            break
+    return items
+
+
+def search_public_sources(query: str, limit: int = 4) -> list[dict[str, str]]:
+    """Search Naver first for Korean results, then use Bing and DuckDuckGo as fallbacks."""
+    try:
+        response = requests.get(
+            "https://search.naver.com/search.naver",
+            params={"query": query, "where": "web"},
+            headers={**HEADERS, "Accept-Language": "ko-KR,ko;q=0.9"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        items = _parse_naver_results(response.text, limit)
+        if items:
+            return items
+    except requests.RequestException:
+        pass
+
+    try:
+        response = requests.get(
+            "https://www.bing.com/search",
+            params={"q": query, "setlang": "ko-KR"},
+            headers=HEADERS,
+            timeout=10,
+        )
+        response.raise_for_status()
+        items = _parse_bing_results(response.text, limit)
+        if items:
+            return items
+    except requests.RequestException:
+        pass
+
     try:
         response = requests.get("https://html.duckduckgo.com/html/", params={"q": query}, headers=HEADERS, timeout=10)
         response.raise_for_status()
@@ -133,10 +215,15 @@ def build_report(company: str, role: str, job_url: str = "", uploaded_text: str 
     sections = extract_job_sections(job_text)
     if not sections["responsibilities"]:
         sections["responsibilities"] = clean_text(job_text)
-    searches = {
-        "history": search_public_sources(f"{company} 회사 연혁"),
-        "values": search_public_sources(f"{company} 인재상 핵심가치"),
-        "business": search_public_sources(f"{company} 사업 소개"),
-        "reviews": search_public_sources(f"{company} {role} 면접 후기"),
+    research_queries = {
+        "history": f"{company} 회사소개 연혁 공식",
+        "values": f"{company} 인재상 핵심가치 채용 공식",
+        "business": f"{company} 사업 소개 서비스 공식",
+        "careers": f"{company} 채용 {role} 직무",
+        "tech": f"{company} 기술 블로그 {role}",
+        "reviews": f"{company} {role} 면접 후기",
     }
+    with ThreadPoolExecutor(max_workers=len(research_queries)) as executor:
+        futures = {name: executor.submit(search_public_sources, query) for name, query in research_queries.items()}
+        searches = {name: futures[name].result() for name in research_queries}
     return {"company": company, "role": role, "job_title": job_title, "job_sections": sections, "questions": build_questions(role, job_text), "sources": searches, "notice": "공개 웹페이지에서 수집한 자료입니다. 출처를 열어 사실관계와 최신성을 직접 확인하세요."}
