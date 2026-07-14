@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Briefing — 면접 준비 리서치</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header><a class="brand" href="/">BRIEFING<span>.</span></a><p>회사와 직무를 이해하는 가장 빠른 준비 노트</p></header>
+  <main>
+    <section class="hero"><div><p class="eyebrow">INTERVIEW RESEARCH WORKSPACE</p><h1>면접 전, <em>알아야 할 것</em>만<br>한 장에 정리하세요.</h1><p class="intro">공개 회사 자료와 채용공고를 출처와 함께 모아, 직무 질문까지 구조화합니다.</p></div><aside><b>01</b><span>회사 맥락</span><b>02</b><span>직무 해석</span><b>03</b><span>질문 설계</span></aside></section>
+    <section class="panel"><form id="research-form"><label>회사명<input name="company" placeholder="예: 카카오" required></label><label>지원 직무<input name="role" placeholder="예: 데이터 분석가" required></label><label class="wide">채용공고 URL<input type="url" name="jobUrl" placeholder="https://..." required></label><button>리서치 시작 <span>↗</span></button></form><p class="hint">공개 접근 가능한 공고 URL만 사용할 수 있습니다. 수집 결과의 원문 출처를 반드시 확인하세요.</p></section>
+    <section id="loading" class="loading" hidden><i></i><p>공고를 읽고 공개 자료를 찾는 중입니다…</p></section>
+    <section id="error" class="error" hidden></section>
+    <section id="report" hidden>
+      <div class="report-head"><p class="eyebrow">PREP BRIEF</p><h2 id="report-title"></h2><p id="notice"></p></div>
+      <div class="grid">
+        <article class="card job"><div class="card-number">01</div><h3>직무 해석</h3><h4>담당 업무</h4><p id="responsibilities"></p><h4>필수 요건</h4><p id="requirements"></p><h4>우대 사항</h4><p id="preferred"></p></article>
+        <article class="card questions"><div class="card-number">02</div><h3>예상 질문</h3><ol id="questions"></ol></article>
+      </div>
+      <section class="sources"><div><p class="eyebrow">PUBLIC SOURCES</p><h3>회사 리서치</h3></div><div id="source-groups"></div></section>
+    </section>
+  </main>
+  <footer>BRIEFING / public-source research only</footer>
+<script>
+const form=document.querySelector('#research-form'), loading=document.querySelector('#loading'), report=document.querySelector('#report'), error=document.querySelector('#error');
+const names={history:'회사 연혁',values:'인재상 · 핵심가치',business:'회사가 하는 일',reviews:'면접 후기 · 참고자료'};
+const esc=(s='')=>s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+form.addEventListener('submit',async(e)=>{e.preventDefault(); loading.hidden=false; report.hidden=true; error.hidden=true; const data=Object.fromEntries(new FormData(form)); try{const r=await fetch('/api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const d=await r.json(); if(!r.ok) throw Error(d.error); render(d)}catch(err){error.textContent=err.message;error.hidden=false}finally{loading.hidden=true}});
+function render(d){document.querySelector('#report-title').textContent=`${d.company} · ${d.role}`;document.querySelector('#notice').textContent=d.notice;['responsibilities','requirements','preferred'].forEach(k=>document.querySelector('#'+k).textContent=d.job_sections[k]||'공고에서 명확히 추출되지 않았습니다. 원문을 확인해 주세요.');document.querySelector('#questions').innerHTML=d.questions.map(x=>`<li>${esc(x)}</li>`).join('');document.querySelector('#source-groups').innerHTML=Object.entries(d.sources).map(([k,v])=>`<article class="source-group"><h4>${names[k]}</h4>${v.length?v.map(i=>`<a href="${esc(i.url)}" target="_blank" rel="noopener"><b>${esc(i.title)}</b><span>${esc(i.snippet||'원문 보기')}</span><small>출처 열기 ↗</small></a>`).join(''):'<p class="empty">공개 검색 결과를 가져오지 못했습니다.</p>'}</article>`).join('');report.hidden=false;report.scrollIntoView({behavior:'smooth',block:'start'})}
+</script>
+</body></html>
