@@ -61,5 +61,6 @@ def test_page_contains_free_form_topics_input():
     page = response.get_data(as_text=True)
     assert "정보처리기사" in page
     assert 'name="company" value="서울물재생시설공단"' in page
+    assert 'placeholder="예: 카카오"' not in page
     assert 'name="role" value="전산직"' in page
     assert page.count("(필수)") == 2
