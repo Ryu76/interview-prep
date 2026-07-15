@@ -5,9 +5,17 @@ from tempfile import NamedTemporaryFile
 from flask import Flask, jsonify, render_template, request, send_file
 from pdf_export import create_briefing_pdf
 from research import build_report, extract_image_text, extract_pdf_text
+from interview import get_result, get_session, start, submit_answer
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
+app.config.setdefault("INTERVIEW_DATABASE", str(Path(app.instance_path) / "interviews.sqlite3"))
+
+
+def interview_database():
+    path = Path(app.config["INTERVIEW_DATABASE"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 @app.errorhandler(413)
@@ -17,6 +25,61 @@ def uploaded_file_too_large(_error):
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.post("/api/interviews")
+def start_interview():
+    try:
+        payload = request.get_json(silent=True)
+        result = start(interview_database(), payload if payload is not None else {})
+        return jsonify(result), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+
+@app.get("/api/interviews/<session_id>")
+def interview_session(session_id):
+    try:
+        result = get_session(interview_database(), session_id, request.headers.get("X-Interview-Token", ""))
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), 403
+    if result is None:
+        return jsonify({"error": "면접 세션을 찾을 수 없습니다."}), 404
+    return jsonify(result)
+
+
+@app.post("/api/interviews/<session_id>/answers")
+def answer_interview(session_id):
+    try:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise ValueError("요청 본문은 JSON 객체여야 합니다.")
+        result = submit_answer(
+            interview_database(), session_id, payload.get("answer", ""), payload.get("questionId"),
+            request.headers.get("X-Interview-Token", ""),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), 403
+    except RuntimeError as error:
+        return jsonify({"error": str(error)}), 409
+    if result is None:
+        return jsonify({"error": "면접 세션을 찾을 수 없습니다."}), 404
+    return jsonify(result)
+
+
+@app.get("/api/interviews/<session_id>/result")
+def interview_result(session_id):
+    try:
+        result = get_result(interview_database(), session_id, request.headers.get("X-Interview-Token", ""))
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), 403
+    if result is None:
+        return jsonify({"error": "면접 세션을 찾을 수 없습니다."}), 404
+    if result["status"] != "completed":
+        return jsonify({"error": "면접을 완료한 후 결과를 확인할 수 있습니다."}), 409
+    return jsonify(result)
 
 
 @app.post("/api/export-pdf")
@@ -65,4 +128,4 @@ def research():
         return jsonify({"error": "채용공고를 불러오지 못했습니다. 공개 접근 가능한 URL인지 확인해 주세요."}), 502
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    app.run(host="127.0.0.1", port=5050, debug=False)
