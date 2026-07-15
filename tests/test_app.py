@@ -14,7 +14,7 @@ def test_health_page_loads():
 def test_api_accepts_form_without_url(monkeypatch):
     captured = {}
 
-    def fake_report(company, role, url, uploaded_text="", generate_brief=False):
+    def fake_report(company, role, url, uploaded_text="", topics_text="", generate_brief=False):
         captured["generate_brief"] = generate_brief
         return {"company": company, "role": role}
 
@@ -35,7 +35,7 @@ def test_api_extracts_text_from_optional_pdf(monkeypatch):
 
     captured = {}
 
-    def fake_report(company, role, url, uploaded_text="", generate_brief=False):
+    def fake_report(company, role, url, uploaded_text="", topics_text="", generate_brief=False):
         captured["uploaded_text"] = uploaded_text
         return {"company": company, "role": role}
 

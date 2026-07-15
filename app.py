@@ -39,6 +39,7 @@ def export_pdf():
 def research():
     data = request.form if request.form else (request.get_json(silent=True) or {})
     company, role, url = (data.get("company") or "").strip(), (data.get("role") or "").strip(), (data.get("jobUrl") or "").strip()
+    topics = (data.get("topics") or "").strip()
     if not company or not role:
         return jsonify({"error": "회사명과 지원 직무는 필수입니다."}), 400
     uploaded_text = ""
@@ -57,7 +58,7 @@ def research():
         if not uploaded_text:
             return jsonify({"error": "업로드 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다. 더 선명한 이미지 또는 텍스트가 포함된 PDF를 사용해 주세요."}), 422
     try:
-        return jsonify(build_report(company, role, url, uploaded_text, generate_brief=True))
+        return jsonify(build_report(company, role, url, uploaded_text, topics_text=topics, generate_brief=True))
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     except Exception:

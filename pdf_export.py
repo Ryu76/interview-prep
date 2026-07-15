@@ -45,6 +45,8 @@ def _font_settings() -> tuple[str, fitz.Archive | None]:
 def build_pdf_html(report: dict) -> str:
     brief = report.get("interview_brief") or {}
     job = report.get("job_sections") or {}
+    topics = report.get("selected_topics") if isinstance(report.get("selected_topics"), list) else []
+    topics_html = "".join(f"<span>{_text(topic)}</span>" for topic in topics)
     playbook = brief.get("answer_playbook") if isinstance(brief.get("answer_playbook"), list) else []
     playbook_html = []
     for index, item in enumerate(playbook, 1):
@@ -67,6 +69,7 @@ def build_pdf_html(report: dict) -> str:
     return f"""<!doctype html><html><body>
       <header><div class='label'>INTERVIEW PREP BRIEF</div>
       <h1>{_text(report.get('company'))} · {_text(report.get('role'))}</h1>
+      <div class='topics'>{topics_html}</div>
       <p class='notice'>{_text(report.get('notice'))}</p></header>
       <section class='summary'><h2>면접 완성 브리핑</h2><p>{_text(brief.get('executive_summary'))}</p></section>
       {list_html}
@@ -94,6 +97,7 @@ def create_briefing_pdf(report: dict) -> bytes:
       ul, ol { margin: 4pt 0 10pt; padding-left: 18pt; }
       li { margin-bottom: 5pt; }
       .notice { color: #68736e; font-size: 8.5pt; }
+      .topics span { display: inline-block; background: #e5ebd7; color: #4d6c2a; padding: 3pt 6pt; margin: 0 4pt 5pt 0; font-size: 8.5pt; }
       .summary { background: #eef5df; padding: 12pt; }
       .summary h2 { margin-top: 0; }
       .question { border-left: 3px solid #c8ed70; padding-left: 10pt; margin-bottom: 13pt; page-break-inside: avoid; }

@@ -24,6 +24,21 @@ def clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def parse_topics(value: str) -> list[str]:
+    """Parse optional technologies, specialties, and certificates from free-form input."""
+    topics = []
+    seen = set()
+    for item in re.split(r"[,;\n]+", value or ""):
+        topic = clean_text(item)[:80]
+        normalized = topic.casefold()
+        if topic and normalized not in seen:
+            topics.append(topic)
+            seen.add(normalized)
+        if len(topics) >= 20:
+            break
+    return topics
+
+
 def parse_brief_response(response: str) -> dict:
     """Read the JSON object from Hermes CLI output, which may include session metadata."""
     start, end = response.find("{"), response.rfind("}")
@@ -38,7 +53,7 @@ def parse_brief_response(response: str) -> dict:
     return brief
 
 
-def generate_interview_brief(company: str, role: str, job_text: str, sources: dict[str, list[dict[str, str]]]) -> dict:
+def generate_interview_brief(company: str, role: str, job_text: str, sources: dict[str, list[dict[str, str]]], topics: list[str] | None = None) -> dict:
     """Use the configured Hermes model to synthesize cited research into an interview brief."""
     source_digest = {
         category: [
@@ -48,7 +63,7 @@ def generate_interview_brief(company: str, role: str, job_text: str, sources: di
         for category, items in sources.items()
     }
     research_packet = json.dumps(
-        {"company": company, "role": role, "job_posting_or_upload": job_text[:14000], "public_sources": source_digest},
+        {"company": company, "role": role, "selected_specialties_technologies_certificates": topics or [], "job_posting_or_upload": job_text[:14000], "public_sources": source_digest},
         ensure_ascii=False,
     )
     prompt = f"""You are a rigorous Korean interview coach. Create a practical interview-preparation brief in Korean from the DATA below.
@@ -275,7 +290,7 @@ def extract_pdf_text(pdf_path: str) -> str:
         document.close()
 
 
-def build_report(company: str, role: str, job_url: str = "", uploaded_text: str = "", generate_brief: bool = False) -> dict:
+def build_report(company: str, role: str, job_url: str = "", uploaded_text: str = "", topics_text: str = "", generate_brief: bool = False) -> dict:
     if job_url:
         job_text, job_title = fetch_job_posting(job_url)
         if uploaded_text.strip():
@@ -283,6 +298,9 @@ def build_report(company: str, role: str, job_url: str = "", uploaded_text: str 
     else:
         job_title = None
         job_text = uploaded_text.strip() or f"담당 업무\n{role} 직무의 핵심 문제를 해결하고, 필요 역량과 협업 경험을 조사합니다."
+    topics = parse_topics(topics_text)
+    topic_context = " ".join(topics)
+    question_context = f"{job_text}\n선택 세부 분야·기술·자격증: {topic_context}" if topics else job_text
     sections = extract_job_sections(job_text)
     if not sections["responsibilities"]:
         sections["responsibilities"] = clean_text(job_text)
@@ -290,20 +308,21 @@ def build_report(company: str, role: str, job_url: str = "", uploaded_text: str 
         "history": f"{company} 회사소개 연혁 공식",
         "values": f"{company} 인재상 핵심가치 채용 공식",
         "business": f"{company} 사업 소개 서비스 공식",
-        "careers": f"{company} 채용 {role} 직무",
-        "tech": f"{company} 기술 블로그 {role}",
+        "careers": f"{company} 채용 {role} 직무 {topic_context}".strip(),
+        "tech": f"{company} 기술 블로그 {role} {topic_context}".strip(),
         "reviews": f"{company} {role} 면접 후기",
     }
     with ThreadPoolExecutor(max_workers=len(research_queries)) as executor:
         futures = {name: executor.submit(search_public_sources, query) for name, query in research_queries.items()}
         searches = {name: futures[name].result() for name in research_queries}
-    interview_brief = generate_interview_brief(company, role, job_text, searches) if generate_brief else None
+    interview_brief = generate_interview_brief(company, role, job_text, searches, topics) if generate_brief else None
     return {
         "company": company,
         "role": role,
+        "selected_topics": topics,
         "job_title": job_title,
         "job_sections": sections,
-        "questions": build_questions(role, job_text),
+        "questions": build_questions(role, question_context),
         "sources": searches,
         "interview_brief": interview_brief,
         "notice": "공개 자료와 채용공고를 GPT-5.6-sol이 종합했습니다. 중요한 사실과 최신성은 연결된 원문에서 최종 확인하세요.",

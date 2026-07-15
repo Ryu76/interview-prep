@@ -9,6 +9,7 @@ def sample_report():
     return {
         "company": "카카오",
         "role": "데이터 분석가",
+        "selected_topics": ["스프링 백엔드", "정보처리기사"],
         "notice": "중요한 사실은 원문에서 확인하세요.",
         "job_sections": {
             "responsibilities": "사용자 행동 데이터를 분석합니다.",
@@ -52,6 +53,7 @@ def test_pdf_export_returns_openable_pdf_with_korean_text():
     assert "카카오" in text
     assert "면접 완성 브리핑" in text
     assert "어려운 분석 문제" in text
+    assert "정보처리기사" in text
 
 
 def test_pdf_export_rejects_missing_report_fields():

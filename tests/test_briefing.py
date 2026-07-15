@@ -15,7 +15,7 @@ def test_build_report_includes_generated_brief_only_when_requested(monkeypatch):
     monkeypatch.setattr(
         research,
         "generate_interview_brief",
-        lambda company, role, job_text, sources: {"executive_summary": f"{company} {role} 브리핑"},
+        lambda company, role, job_text, sources, topics: {"executive_summary": f"{company} {role} 브리핑"},
     )
 
     report = research.build_report("테스트회사", "데이터 분석가", generate_brief=True)
